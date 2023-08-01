@@ -33,12 +33,20 @@ WIDTH = 64
 # Define your custom transform
 train_transform = transforms.Compose([
     transforms.Resize(size=(WIDTH, WIDTH), interpolation=InterpolationMode.BICUBIC),  # Resize all images
-    transforms.RandomHorizontalFlip(p=0.5),  # Add random horizontal flip
-    transforms.RandomVerticalFlip(p=0.5),  # Add random vertical flip
+    transforms.RandomHorizontalFlip(p=0.1),  # Add random horizontal flip
+    transforms.RandomVerticalFlip(p=0.1),  # Add random vertical flip
     transforms.Lambda(lambda img: img.rotate(  # Add random rotation
-        angle=random.choice([0, 0, 0, 90, 180, 270]),
+        angle=random.choice(([0] * 90) + [90, 180, 270]),
         resample=Resampling.BICUBIC,
     )),
+    transforms.RandomAffine(
+        degrees=15,
+        translate=(0.1, 0.1),
+        scale=(0.9, 1.1),
+        shear=15,
+        interpolation=InterpolationMode.BICUBIC,
+        fill=0,
+    ),
     transforms.Lambda(lambda x: apply_wavelet_transform(x=x, scale=SCALE)),  # Add wavelet transform
 ])
 
@@ -106,15 +114,11 @@ def main():
     patience, counter, best_psnr = 20, 0, -float('inf')
 
     # Training loop
-    num_epochs = 200
-    batches_per_epoch = 500
-    dataloader_iterator = iter(cycle(dataloader))  # Iterator for the dataloader
-
+    num_epochs = 100_000
     val_psnr, val_ssim = 0, 0
-    for epoch in range(num_epochs):
+    for _ in (pbar := tqdm(range(num_epochs))):
         model.train()
-        for _ in (pbar := tqdm(range(batches_per_epoch), unit='batches')):
-            x, x_lr, x_bic, input_data, target_data = next(dataloader_iterator)
+        for x, x_lr, x_bic, input_data, target_data in dataloader:
             input_data = input_data.to(device)
             target_data = target_data.to(device)
             outputs = model(input_data)  # Forward pass
@@ -127,7 +131,6 @@ def main():
             psnr_value = psnr(outputs, target_data)
             ssim_value = ssim(outputs, target_data)
             pbar.set_postfix(
-                epoch=f"{epoch + 1}/{num_epochs}",
                 loss=f"{loss.item():.6f}",
                 psnr=f"{psnr_value:.6f}",
                 ssim=f"{ssim_value:.6f}",
@@ -136,9 +139,7 @@ def main():
             )
 
         scheduler.step()  # Adjust the learning rate
-
         val_psnr, val_ssim = validate_model(model, val_dataloader)
-
         if val_psnr > best_psnr:  # Check if val_psnr has improved
             best_psnr, counter = val_psnr, 0
         else:

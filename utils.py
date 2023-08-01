@@ -12,13 +12,17 @@ def psnr_loss(img1, img2):
 
 def lr_schedule(epoch):
     lr = 1e-3
-    if epoch > 80:
+    if epoch > 40_000:
+    # if epoch > 80:
         lr *= 0.5e-3
-    elif epoch > 40:
+    elif epoch > 20_000:
+    # elif epoch > 40:
         lr *= 1e-3
-    elif epoch > 20:
+    elif epoch > 10_000:
+    # elif epoch > 20:
         lr *= 1e-2
-    elif epoch > 10:
+    elif epoch > 5_000:
+    # elif epoch > 10:
         lr *= 1e-1
     return lr
 
