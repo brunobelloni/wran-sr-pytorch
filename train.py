@@ -1,8 +1,8 @@
 import random
-from itertools import cycle
 
 import torch
 import torch.nn as nn
+import torch.nn.parallel as parallel
 from PIL import Image
 from PIL.Image import Resampling
 from datasets import load_dataset
@@ -39,14 +39,6 @@ train_transform = transforms.Compose([
         angle=random.choice(([0] * 90) + [90, 180, 270]),
         resample=Resampling.BICUBIC,
     )),
-    transforms.RandomAffine(
-        degrees=15,
-        translate=(0.1, 0.1),
-        scale=(0.9, 1.1),
-        shear=15,
-        interpolation=InterpolationMode.BICUBIC,
-        fill=0,
-    ),
     transforms.Lambda(lambda x: apply_wavelet_transform(x=x, scale=SCALE)),  # Add wavelet transform
 ])
 
@@ -96,6 +88,10 @@ def main():
 
     model = WaveletBasedResidualAttentionNet(width=WIDTH).to(device)
 
+    # Wrap the model with DataParallel if multiple GPUs are available
+    if torch.cuda.device_count() > 1:
+        model = parallel.DataParallel(model)
+
     # wandb.init(project="wransr", entity="brunobelloni")
     # wandb.watch(model)
 
@@ -111,12 +107,12 @@ def main():
     scheduler = LRScheduler(optimizer)
 
     # Early stopping parameters
-    patience, counter, best_psnr = 20, 0, -float('inf')
+    # patience, counter, best_psnr = 20, 0, -float('inf')
+    val_psnr, val_ssim = 0, 0
 
     # Training loop
-    num_epochs = 100_000
-    val_psnr, val_ssim = 0, 0
-    for _ in (pbar := tqdm(range(num_epochs))):
+    num_epochs = 1_000
+    for epoch in (pbar := tqdm(range(num_epochs))):
         model.train()
         for x, x_lr, x_bic, input_data, target_data in dataloader:
             input_data = input_data.to(device)
@@ -139,14 +135,16 @@ def main():
             )
 
         scheduler.step()  # Adjust the learning rate
-        val_psnr, val_ssim = validate_model(model, val_dataloader)
-        if val_psnr > best_psnr:  # Check if val_psnr has improved
-            best_psnr, counter = val_psnr, 0
-        else:
-            counter += 1
-            if counter >= patience:
-                print(f"Val PSNR did not improve for {patience} epochs. Early stopping...")
-                break
+
+        if (epoch + 1) % 10 == 0:
+            val_psnr, val_ssim = validate_model(model, val_dataloader)
+            # if val_psnr > best_psnr:  # Check if val_psnr has improved
+            #     best_psnr, counter = val_psnr, 0
+            # else:
+            #     counter += 1
+            #     if counter >= patience:
+            #         print(f"Val PSNR did not improve for {patience} epochs. Early stopping...")
+            #         break
 
         # if (epoch + 1) % 5 == 0:
         #     from predict import predict
