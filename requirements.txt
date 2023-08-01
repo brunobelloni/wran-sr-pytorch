@@ -1,0 +1,5 @@
+torch==2.0.1
+datasets==2.14.2
+pywavelets==1.4.1
+torchvision==0.15.2
+torchmetrics==1.0.1

@@ -1,4 +1,5 @@
 import random
+from itertools import cycle
 
 import torch
 import torch.nn as nn
@@ -107,17 +108,13 @@ def main():
     # Training loop
     num_epochs = 200
     batches_per_epoch = 500
-    dataloader_iterator = iter(dataloader)  # Iterator for the dataloader
+    dataloader_iterator = iter(cycle(dataloader))  # Iterator for the dataloader
 
     val_psnr, val_ssim = 0, 0
     for epoch in range(num_epochs):
         model.train()
         for _ in (pbar := tqdm(range(batches_per_epoch), unit='batches')):
-            try:
-                x, x_lr, x_bic, input_data, target_data = next(dataloader_iterator)
-            except StopIteration:  # If the dataloader is exhausted, reset the iterator for the next epoch
-                dataloader_iterator = iter(dataloader)
-                x, x_lr, x_bic, input_data, target_data = next(dataloader_iterator)
+            x, x_lr, x_bic, input_data, target_data = next(dataloader_iterator)
             input_data = input_data.to(device)
             target_data = target_data.to(device)
             outputs = model(input_data)  # Forward pass
@@ -142,7 +139,7 @@ def main():
 
         val_psnr, val_ssim = validate_model(model, val_dataloader)
 
-        if val_psnr > best_psnr: # Check if val_psnr has improved
+        if val_psnr > best_psnr:  # Check if val_psnr has improved
             best_psnr, counter = val_psnr, 0
         else:
             counter += 1
