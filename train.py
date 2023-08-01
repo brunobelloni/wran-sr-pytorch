@@ -4,16 +4,14 @@ import torch
 import torch.nn as nn
 import torch.nn.parallel as parallel
 from PIL import Image
-from PIL.Image import Resampling
 from datasets import load_dataset
 from torch.utils.data import DataLoader
 from torchmetrics.image import PeakSignalNoiseRatio, StructuralSimilarityIndexMeasure
-from torchvision import transforms
-from torchvision.transforms import InterpolationMode
+from torchvision.transforms import transforms, InterpolationMode
 from tqdm import tqdm
 
 from models.wran import WaveletBasedResidualAttentionNet
-from utils import apply_wavelet_transform, LRScheduler
+from utils import apply_wavelet_transform, OneOf
 
 # Set random seed for reproducibility
 random.seed(42)
@@ -33,12 +31,28 @@ WIDTH = 64
 # Define your custom transform
 train_transform = transforms.Compose([
     transforms.Resize(size=(WIDTH, WIDTH), interpolation=InterpolationMode.BICUBIC),  # Resize all images
-    transforms.RandomHorizontalFlip(p=0.1),  # Add random horizontal flip
-    transforms.RandomVerticalFlip(p=0.1),  # Add random vertical flip
-    transforms.Lambda(lambda img: img.rotate(  # Add random rotation
-        angle=random.choice(([0] * 90) + [90, 180, 270]),
-        resample=Resampling.BICUBIC,
-    )),
+    transforms.RandomVerticalFlip(p=0.15),  # Add random vertical flip
+    transforms.RandomHorizontalFlip(p=0.15),  # Add random horizontal flip
+    # Convert to tensor
+    transforms.ToTensor(),
+    transforms.RandomErasing(p=0.15, scale=(0.02, 0.33), ratio=(0.3, 3.3)),  # Add random erasing
+    # Convert to PIL image
+    transforms.ToPILImage(mode='YCbCr'),
+    OneOf(
+        p=0.15,
+        transforms=[
+            transforms.RandomAffine(
+                shear=10,
+                degrees=10,
+                scale=(0.9, 1.1),
+                translate=(0.01, 0.1),
+                interpolation=InterpolationMode.BICUBIC,
+            ),
+            transforms.RandomRotation(degrees=90, interpolation=InterpolationMode.BICUBIC),
+            transforms.RandomRotation(degrees=180, interpolation=InterpolationMode.BICUBIC),
+            transforms.RandomRotation(degrees=270, interpolation=InterpolationMode.BICUBIC),
+        ],
+    ),
     transforms.Lambda(lambda x: apply_wavelet_transform(x=x, scale=SCALE)),  # Add wavelet transform
 ])
 
@@ -49,13 +63,12 @@ val_transform = transforms.Compose([
 
 
 class Dataset(torch.utils.data.Dataset):
-    def __init__(self, hf_dataset, width=64, transform=None):
-        self.width = width
+    def __init__(self, dataset, transform=None):
+        self.dataset = dataset
         self.transform = transform
-        self.hf_dataset = hf_dataset
 
     def __getitem__(self, idx):
-        input_data = Image.open(fp=self.hf_dataset[idx]['hr']).convert("YCbCr")
+        input_data = Image.open(fp=self.dataset[idx]['hr']).convert("YCbCr")
 
         if self.transform:
             input_data = self.transform(input_data)
@@ -63,7 +76,7 @@ class Dataset(torch.utils.data.Dataset):
         return input_data
 
     def __len__(self):
-        return len(self.hf_dataset)
+        return len(self.dataset)
 
 
 def validate_model(model, dataloader):
@@ -79,14 +92,15 @@ def validate_model(model, dataloader):
 def main():
     dataset = load_dataset("eugenesiow/Div2k")  # Load the dataset
 
-    train_dataset = Dataset(hf_dataset=dataset['train'], transform=train_transform)
-    val_dataset = Dataset(hf_dataset=dataset['validation'], transform=val_transform)
+    train_dataset = Dataset(dataset=dataset['train'], transform=train_transform)
+    val_dataset = Dataset(dataset=dataset['validation'], transform=val_transform)
 
     # PyTorch dataloaders
     dataloader = DataLoader(dataset=train_dataset, batch_size=64, shuffle=True, num_workers=16, pin_memory=True)
-    val_dataloader = DataLoader(dataset=val_dataset, batch_size=10, shuffle=False, num_workers=16, pin_memory=True)
+    val_dataloader = DataLoader(dataset=val_dataset, batch_size=10, shuffle=False, num_workers=2, pin_memory=True)
 
     model = WaveletBasedResidualAttentionNet(width=WIDTH).to(device)
+    # model.load_state_dict(torch.load("final_model.pth"))
 
     # Wrap the model with DataParallel if multiple GPUs are available
     if torch.cuda.device_count() > 1:
@@ -104,10 +118,15 @@ def main():
         params=model.parameters(),
     )
 
-    scheduler = LRScheduler(optimizer)
+    lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer=optimizer,
+        mode='max',
+        factor=0.5,
+        patience=5,
+        min_lr=0.0005,
+    )
 
-    # Early stopping parameters
-    # patience, counter, best_psnr = 20, 0, -float('inf')
+    # Validation metrics
     val_psnr, val_ssim = 0, 0
 
     # Training loop
@@ -132,19 +151,13 @@ def main():
                 ssim=f"{ssim_value:.6f}",
                 val_ssim=f"{val_ssim:.6f}",
                 val_psnr=f"{val_psnr:.6f}",
+                lr=f"{optimizer.param_groups[0]['lr']:.6f}",
             )
+        print('')
 
-        scheduler.step()  # Adjust the learning rate
-
-        if (epoch + 1) % 10 == 0:
+        if (epoch + 1) % 1 == 0:
             val_psnr, val_ssim = validate_model(model, val_dataloader)
-            # if val_psnr > best_psnr:  # Check if val_psnr has improved
-            #     best_psnr, counter = val_psnr, 0
-            # else:
-            #     counter += 1
-            #     if counter >= patience:
-            #         print(f"Val PSNR did not improve for {patience} epochs. Early stopping...")
-            #         break
+            lr_scheduler.step(val_psnr)  # Adjust the learning rate
 
         # if (epoch + 1) % 5 == 0:
         #     from predict import predict

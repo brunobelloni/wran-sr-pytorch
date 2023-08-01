@@ -1,41 +1,21 @@
+import random
+
 import numpy as np
 import pywt
 import torch
-import torch.optim.lr_scheduler as lr_scheduler
 from PIL.Image import Resampling
 
 
-def psnr_loss(img1, img2):
-    mse = torch.mean((img1 - img2) ** 2)
-    return 100 if mse == 0 else 20 * torch.log10(1.0 / torch.sqrt(mse))
+class OneOf:
+    def __init__(self, transforms, p=None):
+        self.transforms = transforms
+        self.p = p
 
-
-def lr_schedule(epoch):
-    lr = 1e-3
-    if epoch > 40_000:
-        # if epoch > 80:
-        lr *= 0.5e-3
-    elif epoch > 20_000:
-        # elif epoch > 40:
-        lr *= 1e-3
-    elif epoch > 10_000:
-        # elif epoch > 20:
-        lr *= 1e-2
-    elif epoch > 5_000:
-        # elif epoch > 10:
-        lr *= 1e-1
-    return lr
-
-
-# noinspection PyUnresolvedReferences
-class LRScheduler(lr_scheduler._LRScheduler):
-    def __init__(self, optimizer):
-        self.lr_func = lr_schedule
-        super(LRScheduler, self).__init__(optimizer)
-
-    def get_lr(self):
-        epoch = self.last_epoch + 1
-        return [self.lr_func(epoch) for _ in self.base_lrs]
+    def __call__(self, img):
+        if random.random() >= self.p:
+            return img
+        transform = random.choice(self.transforms)
+        return transform(img)
 
 
 def stack_wavelet_coeffs(coeffs):
@@ -64,8 +44,8 @@ def apply_wavelet_transform(x, scale=4):
     input_data = pywt.dwt2(data=x_bic, wavelet='haar')
     input_data = stack_wavelet_coeffs(coeffs=input_data)
 
-    # target_data = pywt.dwt2(data=x, wavelet='haar')
-    target_data = pywt.dwt2(data=x - x_bic, wavelet='haar')
+    target_data = pywt.dwt2(data=x, wavelet='haar')
+    # target_data = pywt.dwt2(data=x - x_bic, wavelet='haar')
     target_data = stack_wavelet_coeffs(coeffs=target_data)
 
     return x, x_lr, x_bic, input_data, target_data

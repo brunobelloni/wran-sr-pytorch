@@ -6,7 +6,7 @@ from PIL.Image import Resampling
 
 from train import WaveletBasedResidualAttentionNet, apply_wavelet_transform, WIDTH
 
-model_path = "checkpoint/final_model.pth"
+model_path = "final_model_1k.pth"
 
 
 def predict(model, epoch=None, device=torch.device('cpu')):
@@ -34,8 +34,8 @@ def predict(model, epoch=None, device=torch.device('cpu')):
     x_sr = pywt.idwt2((result[0], (result[1], result[2], result[3])), wavelet='haar', mode='zero')
 
     # add Cb and Cr channels
-    image_array[:, :, 0] = (x_sr + x_bic) * 255.0
-    # image_array[:, :, 0] = (x_sr * 255.0)
+    # image_array[:, :, 0] = (x_sr + x_bic) * 255.0
+    image_array[:, :, 0] = (x_sr * 255.0)
 
     # convert to PIL image
     image_reconstructed_pil = Image.fromarray(image_array, 'YCbCr')
