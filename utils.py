@@ -75,9 +75,6 @@ class InfiniteDataLoader(DataLoader):
         try:
             batch = next(self.dataset_iterator)
         except StopIteration:
-            import time
-            start = time.time()
             self.dataset_iterator = super().__iter__()
             batch = next(self.dataset_iterator)
-            print(f'InfiniteDataLoader: {time.time() - start:.2f} seconds to reset the iterator')
         return batch

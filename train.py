@@ -88,7 +88,7 @@ class Dataset(torch.utils.data.Dataset):
         return input_data
 
     def __len__(self):
-        return len(self.dataset) * 100
+        return len(self.dataset) * 50
 
 
 def validate_model(model, dataloader):
@@ -154,9 +154,9 @@ def main():
     # Training loop
     num_epochs = 200
     num_batches = 500
-    for epoch in (pbar := tqdm(range(num_epochs))):
+    for epoch in range(num_epochs):
         model.train()
-        for _ in range(num_batches):
+        for _ in (pbar := tqdm(range(num_batches))):
             image_hr, image_lr, image_bic = next(dataloader)
             input_data = wavelets_transform(image_bic.to(device))
             target_data = wavelets_transform((image_hr - image_bic).to(device))
@@ -177,7 +177,6 @@ def main():
                 val_psnr=f"{val_psnr:.6f}",
                 lr=f"{optimizer.param_groups[0]['lr']:.6f}",
             )
-        print('')
 
         if (epoch + 1) % 1 == 0:
             val_psnr, val_ssim = validate_model(model, val_dataloader)
