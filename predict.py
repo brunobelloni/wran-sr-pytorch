@@ -3,18 +3,26 @@ import pywt
 import torch
 from PIL import Image
 from PIL.Image import Resampling
+from torchmetrics.image import PeakSignalNoiseRatio, StructuralSimilarityIndexMeasure
 
 from train import WaveletBasedResidualAttentionNet, apply_wavelet_transform, WIDTH
 
-model_path = "final_model_1k.pth"
+model_path = "final_model_2k.pth"
 
 
 def predict(model, epoch=None, device=torch.device('cpu')):
-    image = Image.open("/home/bruno/Downloads/tigre.png").convert('YCbCr')
-    image = image.resize((WIDTH, WIDTH), resample=Resampling.BICUBIC)
+    psnr = PeakSignalNoiseRatio().to(device)
+    ssim = StructuralSimilarityIndexMeasure().to(device)
+
+    image = Image.open("/home/bruno/Downloads/comic.bmp").convert('YCbCr')
+    # image = image.resize((WIDTH, WIDTH), resample=Resampling.BICUBIC)
+    image = image.crop((140, 105, 140 + WIDTH, 105 + WIDTH))  # comic crop
+
     image_array = np.array(image)
 
     x, x_lr, x_bic, input_data, target_data = apply_wavelet_transform(x=image)
+    input_data = input_data.to(device)
+    target_data = target_data.to(device)
 
     image.save("results/original.jpg")  # save original image
 
@@ -24,7 +32,10 @@ def predict(model, epoch=None, device=torch.device('cpu')):
     image_array_bicubic.save("results/bicubic.jpg")  # save bicubic image
 
     # Predict an example image and show it upscaled
-    result = model(input_data.unsqueeze(0).to(device))
+    result = model(input_data.unsqueeze(0))
+
+    print('PSNR:', psnr(result, target_data.unsqueeze(0)).item())
+    print('SSIM:', ssim(result, target_data.unsqueeze(0)).item())
 
     # Convert the torch tensors to numpy arrays and rearrange channels
     result = result.squeeze(0).cpu().detach().numpy()
@@ -35,7 +46,7 @@ def predict(model, epoch=None, device=torch.device('cpu')):
 
     # add Cb and Cr channels
     # image_array[:, :, 0] = (x_sr + x_bic) * 255.0
-    image_array[:, :, 0] = (x_sr * 255.0)
+    image_array[:, :, 0] = x_sr * 255.0
 
     # convert to PIL image
     image_reconstructed_pil = Image.fromarray(image_array, 'YCbCr')

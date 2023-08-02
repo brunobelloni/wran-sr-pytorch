@@ -30,14 +30,27 @@ WIDTH = 64
 
 # Define your custom transform
 train_transform = transforms.Compose([
-    transforms.Resize(size=(WIDTH, WIDTH), interpolation=InterpolationMode.BICUBIC),  # Resize all images
+    OneOf(
+        p=1,
+        transforms=[
+            transforms.RandomCrop(size=(WIDTH, WIDTH)),  # Random crop
+            transforms.Resize(size=(WIDTH, WIDTH), interpolation=InterpolationMode.BICUBIC),  # Resize all images
+            transforms.RandomResizedCrop(size=(WIDTH, WIDTH), interpolation=InterpolationMode.BICUBIC),  # Random crop
+        ],
+    ),
     transforms.RandomVerticalFlip(p=0.15),  # Add random vertical flip
     transforms.RandomHorizontalFlip(p=0.15),  # Add random horizontal flip
     # Convert to tensor
     transforms.ToTensor(),
-    transforms.RandomErasing(p=0.15, scale=(0.02, 0.33), ratio=(0.3, 3.3)),  # Add random erasing
+    transforms.RandomErasing(p=0.05, scale=(0.02, 0.33), ratio=(0.3, 3.3)),  # Add random erasing
     # Convert to PIL image
     transforms.ToPILImage(mode='YCbCr'),
+    transforms.RandomPerspective(p=0.01, distortion_scale=0.1, interpolation=InterpolationMode.BICUBIC),
+    transforms.RandomApply(
+        p=0.01,
+        transforms=[transforms.ColorJitter(brightness=0.01, contrast=0.1, saturation=0.1, hue=0.1)],
+    ),
+    transforms.RandomApply(p=0.01, transforms=[transforms.ElasticTransform(interpolation=InterpolationMode.BICUBIC)]),
     OneOf(
         p=0.15,
         transforms=[
@@ -111,7 +124,7 @@ def main():
 
     criterion = nn.L1Loss()
     optimizer = torch.optim.Adam(
-        lr=0.001,
+        lr=0.01,
         eps=1e-08,
         weight_decay=0,
         betas=(0.9, 0.999),
@@ -121,9 +134,9 @@ def main():
     lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer=optimizer,
         mode='max',
-        factor=0.5,
-        patience=5,
-        min_lr=0.0005,
+        factor=0.90,
+        patience=10,
+        min_lr=0.0001,
     )
 
     # Validation metrics
@@ -159,9 +172,9 @@ def main():
             val_psnr, val_ssim = validate_model(model, val_dataloader)
             lr_scheduler.step(val_psnr)  # Adjust the learning rate
 
-        # if (epoch + 1) % 5 == 0:
-        #     from predict import predict
-        #     predict(model, epoch=(epoch + 1), device=device)
+            # if (epoch + 1) % 5 == 0:
+            from predict import predict
+            predict(model, epoch=(epoch + 1), device=device)
         #     # torch.save(model.state_dict(), f'checkpoint/model_{(epoch + 1)}.pth')
 
     torch.save(model.state_dict(), 'checkpoint/final_model.pth')
