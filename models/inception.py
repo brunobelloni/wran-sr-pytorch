@@ -4,7 +4,7 @@ import torch.nn as nn
 
 class InceptionModule(nn.Module):
     def __init__(self, in_channels, width, ratio=4, alpha=0.1):
-        super(InceptionModule, self).__init__()
+        super().__init__()
 
         self.conv1 = nn.Conv2d(in_channels, width // ratio, kernel_size=1, padding=0)
         self.conv2 = nn.Conv2d(in_channels, width // ratio, kernel_size=3, padding=1)

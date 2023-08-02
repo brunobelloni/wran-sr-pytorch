@@ -6,7 +6,7 @@ from models.inception import InceptionModule
 
 class WaveletBasedResidualAttentionNet(nn.Module):
     def __init__(self, input_channels=4, depth=8, ratio=4, width=64, alpha=0.1):
-        super(WaveletBasedResidualAttentionNet, self).__init__()
+        super().__init__()
         self.depth = depth
 
         self.feature_extraction = nn.Sequential(

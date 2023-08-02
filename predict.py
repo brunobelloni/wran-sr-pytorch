@@ -1,11 +1,10 @@
 import numpy as np
-import pywt
 import torch
 from PIL import Image
-from PIL.Image import Resampling
 from torchmetrics.image import PeakSignalNoiseRatio, StructuralSimilarityIndexMeasure
 
-from train import WaveletBasedResidualAttentionNet, apply_wavelet_transform, WIDTH
+from train import (WaveletBasedResidualAttentionNet, apply_preprocess, WIDTH, wavelets_transform,
+                   inverse_wavelets_transform)
 
 model_path = "final_model_2k.pth"
 
@@ -20,33 +19,29 @@ def predict(model, epoch=None, device=torch.device('cpu')):
 
     image_array = np.array(image)
 
-    x, x_lr, x_bic, input_data, target_data = apply_wavelet_transform(x=image)
-    input_data = input_data.to(device)
-    target_data = target_data.to(device)
+    image_hr, image_lr, image_bic = apply_preprocess(x=image)
+
+    input_data = wavelets_transform(image_bic.unsqueeze(0).to(device))
+    target_data = wavelets_transform(image_hr.unsqueeze(0).to(device) - image_bic.unsqueeze(0).to(device))
 
     image.save("results/original.jpg")  # save original image
 
     image_array_bicubic = image_array.copy()
-    image_array_bicubic[:, :, 0] = np.array(x_bic) * 255.0
+    image_array_bicubic[:, :, 0] = np.array(image_bic) * 255.0
     image_array_bicubic = Image.fromarray(image_array_bicubic, 'YCbCr')
     image_array_bicubic.save("results/bicubic.jpg")  # save bicubic image
 
     # Predict an example image and show it upscaled
-    result = model(input_data.unsqueeze(0))
+    result = model(input_data)
 
-    print('PSNR:', psnr(result, target_data.unsqueeze(0)).item())
-    print('SSIM:', ssim(result, target_data.unsqueeze(0)).item())
+    print('PSNR:', psnr(result, target_data).item())
+    print('SSIM:', ssim(result, target_data).item())
 
-    # Convert the torch tensors to numpy arrays and rearrange channels
-    result = result.squeeze(0).cpu().detach().numpy()
-    # print('result', result.shape)
-
-    # reverse wavelet transform
-    x_sr = pywt.idwt2((result[0], (result[1], result[2], result[3])), wavelet='haar', mode='zero')
+    image_sr = inverse_wavelets_transform(result)
 
     # add Cb and Cr channels
-    # image_array[:, :, 0] = (x_sr + x_bic) * 255.0
-    image_array[:, :, 0] = x_sr * 255.0
+    image_array[:, :, 0] = (image_sr.squeeze(0).cpu().detach().numpy() + image_bic.detach().numpy()) * 255.0
+    # image_array[:, :, 0] = image_sr.squeeze(0).cpu().detach().numpy() * 255.0
 
     # convert to PIL image
     image_reconstructed_pil = Image.fromarray(image_array, 'YCbCr')
