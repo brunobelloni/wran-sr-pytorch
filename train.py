@@ -29,6 +29,15 @@ iwt = InverseWaveletsTransform().to(device)
 
 # Define your custom transform
 train_transform = T.Compose([
+    # crop or resize
+    OneOf(
+        p=1,
+        transforms=[
+            # T.RandomCrop(size=(WIDTH, WIDTH)),  # Random crop
+            T.Resize(size=(WIDTH, WIDTH), interpolation=InterpolationMode.BICUBIC),  # Resize all images
+            T.RandomResizedCrop(size=(WIDTH, WIDTH), interpolation=InterpolationMode.BICUBIC),  # Random crop
+        ],
+    ),
     # basic transforms
     T.RandomVerticalFlip(p=0.15),  # Add random vertical flip
     T.RandomHorizontalFlip(p=0.15),  # Add random horizontal flip
@@ -58,14 +67,6 @@ train_transform = T.Compose([
             T.RandomPerspective(p=1, distortion_scale=0.1, interpolation=InterpolationMode.BICUBIC),
             T.RandomApply(p=1, transforms=[T.ElasticTransform(interpolation=InterpolationMode.BICUBIC)]),
             T.RandomApply(p=1, transforms=[T.ColorJitter(brightness=0.01, contrast=0.1, saturation=0.1, hue=0.1)]),
-        ],
-    ),
-    OneOf(
-        p=1,
-        transforms=[
-            T.RandomCrop(size=(WIDTH, WIDTH)),  # Random crop
-            T.Resize(size=(WIDTH, WIDTH), interpolation=InterpolationMode.BICUBIC),  # Resize all images
-            T.RandomResizedCrop(size=(WIDTH, WIDTH), interpolation=InterpolationMode.BICUBIC),  # Random crop
         ],
     ),
     # generate ground truth
