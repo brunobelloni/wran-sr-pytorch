@@ -3,8 +3,8 @@ import torch
 from PIL import Image
 from torchmetrics.image import PeakSignalNoiseRatio, StructuralSimilarityIndexMeasure
 
-from train import (WaveletBasedResidualAttentionNet, apply_preprocess, WIDTH, wavelets_transform,
-                   inverse_wavelets_transform)
+from train import (WaveletBasedResidualAttentionNet, apply_preprocess, WIDTH, wt,
+                   iwt)
 
 model_path = "final_model_2k.pth"
 
@@ -21,8 +21,8 @@ def predict(model, epoch=None, device=torch.device('cpu')):
 
     image_hr, image_lr, image_bic = apply_preprocess(x=image)
 
-    input_data = wavelets_transform(image_bic.unsqueeze(0).to(device))
-    target_data = wavelets_transform(image_hr.unsqueeze(0).to(device) - image_bic.unsqueeze(0).to(device))
+    input_data = wt(image_bic.unsqueeze(0).to(device))
+    target_data = wt(image_hr.unsqueeze(0).to(device) - image_bic.unsqueeze(0).to(device))
 
     image.save("results/original.jpg")  # save original image
 
@@ -37,7 +37,7 @@ def predict(model, epoch=None, device=torch.device('cpu')):
     print('PSNR:', psnr(result, target_data).item())
     print('SSIM:', ssim(result, target_data).item())
 
-    image_sr = inverse_wavelets_transform(result)
+    image_sr = iwt(result)
 
     # add Cb and Cr channels
     image_array[:, :, 0] = (image_sr.squeeze(0).cpu().detach().numpy() + image_bic.detach().numpy()) * 255.0

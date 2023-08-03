@@ -14,17 +14,16 @@ class ChannelAttention(nn.Module):
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
         self.max_pool = nn.AdaptiveMaxPool2d(1)
         self.fc = nn.Sequential(
-            nn.Linear(in_planes, in_planes // ratio, bias=False),
+            nn.Conv2d(in_planes, in_planes // ratio, 1, bias=False),
             nn.LeakyReLU(negative_slope=0.1),
-            nn.Linear(in_planes // ratio, in_planes, bias=False)
+            nn.Conv2d(in_planes // ratio, in_planes, 1, bias=False)
         )
 
     def forward(self, x):
-        b, c, _, _ = x.size()
-        max_out = self.fc(self.max_pool(x).view(b, c)).view(b, c, 1, 1)
-        avg_out = self.fc(self.avg_pool(x).view(b, c)).view(b, c, 1, 1)
+        max_out = self.fc(self.max_pool(x))
+        avg_out = self.fc(self.avg_pool(x))
         out = avg_out + max_out
-        return torch.multiply(x, self.sigmoid(out))
+        return torch.multiply(x     , self.sigmoid(out))
 
 
 class SpatialAttention(nn.Module):
