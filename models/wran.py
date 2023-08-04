@@ -1,5 +1,5 @@
 import torch.nn as nn
-
+import torch.nn.init as init
 from models.cbam import CBAM
 from models.inception import InceptionModule
 
@@ -34,3 +34,16 @@ class WaveletBasedResidualAttentionNet(nn.Module):
 
         out = self.final_layers(out)
         return out
+
+    def initialize_weights(self):
+        for m in self.modules():
+            if isinstance(m, (nn.Conv2d, nn.Linear)):
+                # Xavier initialization for convolutional layers
+                init.xavier_uniform_(tensor=m.weight, gain=1.0)
+                if m.bias is not None:
+                    init.constant_(m.bias, 0)
+
+                # He normal initialization for convolutional layers
+                # init.kaiming_normal_(m.weight, mode='fan_in', nonlinearity='leaky_relu')
+                # if m.bias is not None:
+                #     init.constant_(m.bias, 0)

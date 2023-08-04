@@ -10,7 +10,7 @@ from torchvision.transforms import transforms as T, InterpolationMode
 from tqdm import tqdm
 
 from models.wran import WaveletBasedResidualAttentionNet
-from utils import apply_preprocess, OneOf, WaveletsTransform, InverseWaveletsTransform, InfiniteDataLoader
+from utils import apply_preprocess, OneOf, WaveletsTransform, InverseWaveletsTransform
 
 # Set random seed for reproducibility
 random.seed(42)
@@ -45,17 +45,17 @@ train_transform = T.Compose([
     ),
     # convert to tensor for random erasing
     T.ToTensor(),
-    T.RandomErasing(p=0.01, scale=(0.02, 0.22), ratio=(0.3, 3.3)),
+    T.RandomErasing(p=0.02, scale=(0.02, 0.22), ratio=(0.3, 3.3)),
     T.ToPILImage(mode='YCbCr'),
     # strong transforms
-    # OneOf(
-    #     p=0.01,
-    #     transforms=[
-    #         T.RandomPerspective(p=1, distortion_scale=0.1, interpolation=InterpolationMode.BICUBIC),
-    #         T.RandomApply(p=1, transforms=[T.ElasticTransform(interpolation=InterpolationMode.BICUBIC)]),
-    #         T.RandomApply(p=1, transforms=[T.ColorJitter(brightness=0.01, contrast=0.1, saturation=0.1, hue=0.1)]),
-    #     ],
-    # ),
+    OneOf(
+        p=0.02,
+        transforms=[
+            T.RandomPerspective(p=1, distortion_scale=0.1, interpolation=InterpolationMode.BICUBIC),
+            T.RandomApply(p=1, transforms=[T.ElasticTransform(interpolation=InterpolationMode.BICUBIC)]),
+            T.RandomApply(p=1, transforms=[T.ColorJitter(brightness=0.01, contrast=0.1, saturation=0.1, hue=0.1)]),
+        ],
+    ),
     # generate ground truth
     T.Lambda(lambda x: apply_preprocess(x=x, scale=SCALE)),  # Add wavelet transform
 ])
@@ -70,6 +70,7 @@ class Dataset(torch.utils.data.Dataset):
     def __init__(self, dataset, transform=None):
         self.dataset = dataset
         self.transform = transform
+        self.cache = {}
 
     def __getitem__(self, idx):
         input_data = Image.open(fp=self.dataset[idx % len(self.dataset)]['hr']).convert("YCbCr")
@@ -80,7 +81,7 @@ class Dataset(torch.utils.data.Dataset):
         return input_data
 
     def __len__(self):
-        return len(self.dataset) * 40
+        return len(self.dataset) * 1
 
 
 def validate_model(model, dataloader):
@@ -98,7 +99,7 @@ def validate_model(model, dataloader):
 
             batch_psnr = psnr(outputs, target_data)
             batch_ssim = ssim(outputs, target_data)
-            return batch_psnr, batch_ssim
+            # return batch_psnr, batch_ssim
 
             num_batches += 1
             total_psnr += batch_psnr.item()
@@ -125,38 +126,41 @@ def main():
     val_dataloader = DataLoader(
         dataset=val_dataset,
         batch_size=64,
-        shuffle=False,
+        shuffle=True,
         num_workers=16,
         pin_memory=True,
-        persistent_workers=True,
+        drop_last=True,
+        # persistent_workers=True,
     )
 
     model = WaveletBasedResidualAttentionNet(width=WIDTH).to(device)
+    model.initialize_weights()
     # model.load_state_dict(torch.load("final_model.pth"))
 
     # wandb.init(project="wransr", entity="brunobelloni")
     # wandb.watch(model)
 
+    initial_lr = 0.001
+    min_lr = 0.0000001
+    lr_decay_factor = 0.1
+    lr_decay_epoch = 40
     criterion = nn.L1Loss()
     optimizer = torch.optim.Adam(
-        lr=0.001,
+        lr=initial_lr,
         eps=1e-08,
         weight_decay=0,
         betas=(0.9, 0.999),
         params=model.parameters(),
     )
-
-    lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+    lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
         optimizer=optimizer,
-        mode='max',
-        factor=0.90,
-        patience=2,
-        min_lr=0.00000001,
+        lr_lambda=lambda epoch: lr_decay_factor ** (epoch // lr_decay_epoch)
+        if initial_lr * lr_decay_factor ** (epoch // lr_decay_epoch) > min_lr
+        else min_lr
     )
 
     # Validation metrics
     val_psnr, val_ssim = 0, 0
-
     # Training loop
     num_epochs = 200
     for epoch in range(num_epochs):
@@ -190,14 +194,15 @@ def main():
                 lr=f"{optimizer.param_groups[0]['lr']:.6f}",
             )
 
+        lr_scheduler.step()  # Adjust the learning rate
+
         if (epoch + 1) % 1 == 0:
             val_psnr, val_ssim = validate_model(model, val_dataloader)
-            lr_scheduler.step(val_ssim)  # Adjust the learning rate
-
             # if (epoch + 1) % 5 == 0:
-            # from predict import predict
-            # predict(model, epoch=(epoch + 1), device=device)
-        # torch.save(model.state_dict(), f'model_{(epoch + 1)}.pth')
+            from predict import predict
+            predict(model, epoch=(epoch + 1), device=device)
+
+        torch.save(model.state_dict(), f'model_{(epoch + 1)}.pth')
 
     torch.save(model.state_dict(), 'final_model.pth')
 

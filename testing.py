@@ -1,6 +1,9 @@
+from PIL import Image
 from datasets import load_dataset
 from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
+from torchvision.utils import save_image
+
 from train import train_transform, Dataset
 
 
@@ -31,7 +34,10 @@ def main():
         pin_memory=True,
     )
     for batch in dataloader:
+        img = Image.fromarray(batch[0][0].numpy())
         plot_batch(batch[0])
+        img.convert('RGB').save('test.png')
+        # batch[0][0]
         break  # Only show the first batch
 
 

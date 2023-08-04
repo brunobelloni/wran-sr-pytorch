@@ -15,7 +15,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 def main():
     dataset = load_dataset("eugenesiow/Div2k")  # Load the dataset
 
-    val_dataset = Dataset(dataset=dataset['validation'], transform=val_transform)
+    val_dataset = Dataset(dataset=dataset['validation'])
 
     val_dataloader = DataLoader(
         dataset=val_dataset,
@@ -27,7 +27,7 @@ def main():
     )
 
     model = WaveletBasedResidualAttentionNet(width=WIDTH).to(device)
-    model.load_state_dict(torch.load("/home/bruno/Downloads/checkpoints/model_13.pth"))
+    model.load_state_dict(torch.load("/home/bruno/Downloads/checkpoints/model_1.pth"))
 
     # Initialize lists to store images for plotting
     hr_images = []
@@ -39,7 +39,7 @@ def main():
     ssim_sum = 0.0
     total_images = 0
 
-    for original, image_hr, image_lr, image_bic in val_dataloader:
+    for image_hr, image_lr, image_bic in val_dataloader:
         image_bic = image_bic.to(device)
         image_hr = image_hr.to(device)
         input_data = wt(image_bic)
