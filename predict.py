@@ -1,28 +1,38 @@
 import numpy as np
 import torch
 from PIL import Image
+import random
 from torchmetrics.image import PeakSignalNoiseRatio, StructuralSimilarityIndexMeasure
+from torchvision.transforms import transforms as T
 
-from train import (WaveletBasedResidualAttentionNet, apply_preprocess, WIDTH, wt,
+from train import (WaveletBasedResidualAttentionNet, WIDTH, wt,
                    iwt)
+from utils import apply_preprocess
 
-model_path = "final_model_2k.pth"
+model_path = "/home/bruno/Downloads/checkpoints/model_15.pth"
+
+# Set random seed for reproducibility
 
 
 def predict(model, epoch=None, device=torch.device('cpu')):
+    random.seed(42)
+    torch.manual_seed(42)
+
     psnr = PeakSignalNoiseRatio().to(device)
     ssim = StructuralSimilarityIndexMeasure().to(device)
 
-    image = Image.open("/home/bruno/Downloads/comic.bmp").convert('YCbCr')
+    image = Image.open("/home/bruno/Downloads/tigre.png").convert('YCbCr')
     # image = image.resize((WIDTH, WIDTH), resample=Resampling.BICUBIC)
-    image = image.crop((140, 105, 140 + WIDTH, 105 + WIDTH))  # comic crop
+    image = image.crop((740, 600, 740 + WIDTH, 600 + WIDTH))  # tigre crop
+    # image = image.crop((140, 105, 140 + WIDTH, 105 + WIDTH))  # comic crop
 
     image_array = np.array(image)
 
-    image_hr, image_lr, image_bic = apply_preprocess(x=image)
+    image_hr, _, image_bic = apply_preprocess(x=image)
 
     input_data = wt(image_bic.unsqueeze(0).to(device))
-    target_data = wt(image_hr.unsqueeze(0).to(device) - image_bic.unsqueeze(0).to(device))
+    # target_data = wt(image_hr.unsqueeze(0).to(device))
+    target_data = wt((image_hr.unsqueeze(0) - image_bic.unsqueeze(0)).to(device))
 
     image.save("results/original.jpg")  # save original image
 
@@ -58,7 +68,11 @@ def main():
     model.load_state_dict(torch.load(model_path))  # load model
     model.eval()
 
-    predict(model)
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    model.to(device)
+
+    predict(model=model, device=device)
 
 
 if __name__ == '__main__':

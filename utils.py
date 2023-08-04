@@ -7,7 +7,6 @@ from PIL.Image import Resampling
 from pytorch_wavelets import DWTInverse, DWTForward
 from torch.utils.data import DataLoader
 
-
 class OneOf:
     def __init__(self, transforms, p=None):
         self.transforms = transforms
@@ -21,7 +20,7 @@ class OneOf:
 
 
 def apply_preprocess(x, scale=4):
-    x = x.split()[0]  # Take only the Y channel
+    x = x.split()[0]  # Y channel
 
     x_lr = x.resize(size=(x.size[0] // scale, x.size[1] // scale), resample=Resampling.BICUBIC)
     x_bic = x_lr.resize(size=(x.size[0], x.size[1]), resample=Resampling.BICUBIC)
