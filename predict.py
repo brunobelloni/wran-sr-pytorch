@@ -21,7 +21,7 @@ def predict(model, epoch=None, device=torch.device('cpu')):
     psnr = PeakSignalNoiseRatio().to(device)
     ssim = StructuralSimilarityIndexMeasure().to(device)
 
-    image = Image.open("/home/bruno/Downloads/tigre.png").convert('YCbCr')
+    image = Image.open("test_images/tiger.png").convert('YCbCr')
     # image = image.resize((WIDTH, WIDTH), resample=Resampling.BICUBIC)
     image = image.crop((740, 600, 740 + WIDTH, 600 + WIDTH))  # tigre crop
     # image = image.crop((140, 105, 140 + WIDTH, 105 + WIDTH))  # comic crop

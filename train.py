@@ -45,7 +45,7 @@ train_transform = T.Compose([
     ),
     # convert to tensor for random erasing
     T.ToTensor(),
-    T.RandomErasing(p=0.02, scale=(0.02, 0.22), ratio=(0.3, 3.3)),
+    T.RandomErasing(p=0.05, scale=(0.02, 0.22), ratio=(0.3, 3.3)),
     T.ToPILImage(mode='YCbCr'),
     # strong transforms
     OneOf(
@@ -67,10 +67,10 @@ val_transform = T.Compose([
 
 
 class Dataset(torch.utils.data.Dataset):
-    def __init__(self, dataset, transform=None):
+    def __init__(self, dataset, transform=None, multiplier=1):
         self.dataset = dataset
         self.transform = transform
-        self.cache = {}
+        self.multiplier = multiplier
 
     def __getitem__(self, idx):
         input_data = Image.open(fp=self.dataset[idx % len(self.dataset)]['hr']).convert("YCbCr")
@@ -81,7 +81,7 @@ class Dataset(torch.utils.data.Dataset):
         return input_data
 
     def __len__(self):
-        return len(self.dataset) * 1
+        return len(self.dataset) * self.multiplier
 
 
 def validate_model(model, dataloader):
@@ -111,8 +111,23 @@ def validate_model(model, dataloader):
 def main():
     dataset = load_dataset("eugenesiow/Div2k")  # Load the dataset
 
-    train_dataset = Dataset(dataset=dataset['train'], transform=train_transform)
-    val_dataset = Dataset(dataset=dataset['validation'], transform=val_transform)
+    train_dataset = Dataset(dataset=dataset['train'], transform=train_transform, multiplier=2)
+    val_dataset = Dataset(
+        dataset=[
+            {'hr': 'test_images/butterfly.bmp'},
+            {'hr': 'test_images/tiger.png'},
+            {'hr': 'test_images/comic.bmp'},
+            {'hr': 'test_images/cat.png'},
+            {'hr': 'test_images/books.png'},
+            {'hr': 'test_images/lion.png'},
+            {'hr': 'test_images/wolf.png'},
+            {'hr': 'test_images/train.png'},
+            {'hr': 'test_images/aligator.png'},
+            {'hr': 'test_images/buda.png'},
+        ],
+        transform=val_transform,
+    )
+    # val_dataset = Dataset(dataset=dataset['validation'], transform=val_transform)
 
     # PyTorch dataloaders
     dataloader = DataLoader(
@@ -125,9 +140,9 @@ def main():
     )
     val_dataloader = DataLoader(
         dataset=val_dataset,
-        batch_size=64,
+        batch_size=10,
         shuffle=True,
-        num_workers=16,
+        num_workers=2,
         pin_memory=True,
         drop_last=True,
         # persistent_workers=True,
@@ -199,12 +214,12 @@ def main():
         if (epoch + 1) % 1 == 0:
             val_psnr, val_ssim = validate_model(model, val_dataloader)
             # if (epoch + 1) % 5 == 0:
-            from predict import predict
-            predict(model, epoch=(epoch + 1), device=device)
+            # from predict import predict
+            # predict(model, epoch=(epoch + 1), device=device)
 
-        torch.save(model.state_dict(), f'model_{(epoch + 1)}.pth')
+        torch.save(model.state_dict(), f'checkpoint/model_{(epoch + 1)}.pth')
 
-    torch.save(model.state_dict(), 'final_model.pth')
+    torch.save(model.state_dict(), 'checkpoint/final_model.pth')
 
 
 if __name__ == '__main__':
