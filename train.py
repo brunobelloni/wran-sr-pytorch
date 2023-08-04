@@ -146,13 +146,13 @@ def main():
         params=model.parameters(),
     )
 
-    # lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-    #     optimizer=optimizer,
-    #     mode='max',
-    #     factor=0.90,
-    #     patience=2,
-    #     min_lr=0.00000001,
-    # )
+    lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer=optimizer,
+        mode='max',
+        factor=0.90,
+        patience=2,
+        min_lr=0.00000001,
+    )
 
     # Validation metrics
     val_psnr, val_ssim = 0, 0
@@ -192,7 +192,7 @@ def main():
 
         if (epoch + 1) % 1 == 0:
             val_psnr, val_ssim = validate_model(model, val_dataloader)
-            # lr_scheduler.step(val_ssim)  # Adjust the learning rate
+            lr_scheduler.step(val_ssim)  # Adjust the learning rate
 
             # if (epoch + 1) % 5 == 0:
             # from predict import predict
