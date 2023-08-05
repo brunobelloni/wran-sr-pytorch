@@ -23,7 +23,7 @@ class ChannelAttention(nn.Module):
         max_out = self.fc(self.max_pool(x))
         avg_out = self.fc(self.avg_pool(x))
         out = avg_out + max_out
-        return torch.multiply(x     , self.sigmoid(out))
+        return torch.multiply(x, self.sigmoid(out))
 
 
 class SpatialAttention(nn.Module):

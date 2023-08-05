@@ -39,11 +39,6 @@ class WaveletBasedResidualAttentionNet(nn.Module):
         for m in self.modules():
             if isinstance(m, (nn.Conv2d, nn.Linear)):
                 # Xavier initialization for convolutional layers
-                init.xavier_uniform_(tensor=m.weight, gain=1.0)
+                init.xavier_uniform_(tensor=m.weight, gain=0.1)
                 if m.bias is not None:
                     init.constant_(m.bias, 0)
-
-                # He normal initialization for convolutional layers
-                # init.kaiming_normal_(m.weight, mode='fan_in', nonlinearity='leaky_relu')
-                # if m.bias is not None:
-                #     init.constant_(m.bias, 0)

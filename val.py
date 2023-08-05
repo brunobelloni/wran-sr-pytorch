@@ -15,11 +15,28 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 def main():
     dataset = load_dataset("eugenesiow/Div2k")  # Load the dataset
 
-    val_dataset = Dataset(dataset=dataset['validation'])
+    val_dataset = Dataset(
+        dataset=[
+            # {'hr': 'test_images/comic.bmp', 'crop': (140, 105, 140 + WIDTH, 105 + WIDTH)},
+            # {'hr': 'test_images/butterfly.bmp', 'crop': (150, 150, 150 + WIDTH, 150 + WIDTH)},
+            {'hr': 'test_images/books.png', 'crop': (0, 0, 0 + WIDTH, 0 + WIDTH)},
+            {'hr': 'test_images/cat.png', 'crop': (800, 900, 800 + WIDTH, 900 + WIDTH)},
+            {'hr': 'test_images/lion.png', 'crop': (970, 780, 970 + WIDTH, 780 + WIDTH)},
+            {'hr': 'test_images/tiger.png', 'crop': (740, 600, 740 + WIDTH, 600 + WIDTH)},
+            {'hr': 'test_images/train.png', 'crop': (180, 700, 180 + WIDTH, 700 + WIDTH)},
+            {'hr': 'test_images/spiral.png', 'crop': (950, 150, 950 + WIDTH, 150 + WIDTH)},
+            {'hr': 'test_images/wolf.png', 'crop': (1200, 300, 1200 + WIDTH, 300 + WIDTH)},
+            {'hr': 'test_images/buda.png', 'crop': (1225, 180, 1225 + WIDTH, 180 + WIDTH)},
+            {'hr': 'test_images/aligator.png', 'crop': (100, 700, 100 + WIDTH, 700 + WIDTH)},
+            {'hr': 'test_images/butterfly.png', 'crop': (900, 1000, 900 + WIDTH, 1000 + WIDTH)},
+        ],
+        _type='val',
+        transform=val_transform,
+    )
 
     val_dataloader = DataLoader(
         dataset=val_dataset,
-        batch_size=64,
+        batch_size=10,
         shuffle=False,
         num_workers=16,
         pin_memory=True,
@@ -27,7 +44,7 @@ def main():
     )
 
     model = WaveletBasedResidualAttentionNet(width=WIDTH).to(device)
-    model.load_state_dict(torch.load("/home/bruno/Downloads/checkpoints/model_1.pth"))
+    model.load_state_dict(torch.load("/home/bruno/Downloads/checkpoints_2/model_100.pth"))
 
     # Initialize lists to store images for plotting
     hr_images = []
@@ -51,22 +68,15 @@ def main():
         total_images += input_data.size(0)
 
         outputs = iwt(outputs) * 255.0
+        image_hr = image_hr * 255.0
+        image_bic = image_bic * 255.0
 
         for index in range(len(outputs)):
-            current_bic = original[index].detach().cpu().numpy().copy()
-            current_bic[:, :, 0] = image_bic[index].detach().cpu().numpy()
-
-            current_sr = original[index].detach().cpu().numpy().copy()
-            current_sr[:, :, 0] = outputs[index].detach().cpu().numpy()
-
-            current_sr_bic = original[index].detach().cpu().numpy().copy()
-            current_sr_bic[:, :, 0] = (outputs[index].detach().cpu().numpy() + image_bic[index].detach().cpu().numpy())
-
             # Accumulate images for plotting
-            hr_images.append(original[index].detach().cpu().numpy())
-            bic_images.append(current_bic)
-            sr_images.append(current_sr)
-            sr_bic_images.append(current_sr_bic)
+            hr_images.append(image_hr[index].detach().cpu().numpy())
+            bic_images.append(image_bic[index].detach().cpu().numpy())
+            sr_images.append(outputs[index].detach().cpu().numpy())
+            sr_bic_images.append(outputs[index].detach().cpu().numpy() + image_bic[index].detach().cpu().numpy())
         break
 
     # Calculate average PSNR and SSIM
@@ -77,7 +87,7 @@ def main():
 
     # Create the plot with 5 random images
     num_images = len(hr_images)
-    num_random_images = 1
+    num_random_images = 3
     random_indices = random.sample(range(num_images), num_random_images)
 
     plt.figure(figsize=(15, 4 * num_random_images))

@@ -23,6 +23,6 @@ class InceptionModule(nn.Module):
         conv2 = self.leaky_relu(self.conv2(x))
         conv3 = self.leaky_relu(self.conv3(x))
         conv4 = self.leaky_relu(self.conv4(x))
-
         concatenated = torch.cat([conv1, conv2, conv3, conv4], dim=1)
-        return self.leaky_relu(self.final_conv(concatenated))
+        out = self.final_conv(concatenated)
+        return self.leaky_relu(out)

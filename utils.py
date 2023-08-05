@@ -7,6 +7,30 @@ from PIL.Image import Resampling
 from pytorch_wavelets import DWTInverse, DWTForward
 from torch.utils.data import DataLoader
 
+
+def psnr_loss(y_true, y_pred, max_pixel=1.0):
+    # assert y_true.shape == y_pred.shape, 'Cannot compute PSNR if two input shapes are not same: %s and %s' % (str(
+    #     y_true.shape), str(y_pred.shape))
+    mse = torch.mean((y_pred - y_true) ** 2)
+    return 10.0 * torch.log10((max_pixel ** 2) / mse)
+
+
+def ssim_loss(y_true, y_pred):
+    # assert y_true.shape == y_pred.shape, 'Cannot compute SSIM if two input shapes are not same: %s and %s' % (str(
+    #     y_true.shape), str(y_pred.shape))
+    u_true = torch.mean(y_true)
+    u_pred = torch.mean(y_pred)
+    var_true = torch.var(y_true)
+    var_pred = torch.var(y_pred)
+    std_true = torch.sqrt(var_true)
+    std_pred = torch.sqrt(var_pred)
+    c1 = (0.01 * 7) ** 2
+    c2 = (0.03 * 7) ** 2
+    ssim = (2 * u_true * u_pred + c1) * (2 * std_pred * std_true + c2)
+    denom = (u_true ** 2 + u_pred ** 2 + c1) * (var_pred + var_true + c2)
+    return ssim / denom
+
+
 class OneOf:
     def __init__(self, transforms, p=None):
         self.transforms = transforms
@@ -44,11 +68,7 @@ class WaveletsTransform(nn.Module):
 
     def forward(self, x):
         wavelets = self.transform(x=x.unsqueeze(1))
-        c_a = wavelets[0].squeeze(1)
-        c_h = wavelets[1][0].squeeze(1)[:, 0, :, :]
-        c_v = wavelets[1][0].squeeze(1)[:, 1, :, :]
-        c_d = wavelets[1][0].squeeze(1)[:, 2, :, :]
-        return torch.cat(tensors=[c_a, c_h, c_v, c_d]).view(x.shape[0], 4, c_a.shape[1], c_a.shape[2])
+        return torch.cat((wavelets[0].unsqueeze(1), wavelets[1][0]), dim=2).squeeze(1)
 
 
 class InverseWaveletsTransform(nn.Module):
