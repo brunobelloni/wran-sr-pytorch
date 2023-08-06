@@ -33,17 +33,19 @@ BATCH_SIZE = 64
 wt = WaveletsTransform().to(device)
 iwt = InverseWaveletsTransform().to(device)
 
+
 class AlbumentationsTransforms:
     def __init__(self):
         self.transform = A.Compose(
             transforms=[
-                A.GridDropout(fill_value=0, p=1),
+                A.GridDropout(fill_value=0, p=0.25),
             ],
         )
 
-    def __call__(self, img):
-        augmented = self.transform(image=img)
-        return augmented['image']
+    def __call__(self, x):
+        x = np.array(x)
+        augmented = self.transform(image=x)
+        return Image.fromarray(augmented['image'])
 
 
 # Define your custom transform
@@ -55,7 +57,7 @@ train_transform = T.Compose([
             T.RandomCrop(size=(WIDTH, WIDTH), padding_mode='edge'),
             T.RandomResizedCrop(
                 size=(WIDTH, WIDTH),
-                scale=(0.1, 0.5),
+                scale=(0.05, 0.3),
                 ratio=(0.8, 1.2),
                 interpolation=InterpolationMode.BICUBIC,
             ),
@@ -74,35 +76,25 @@ train_transform = T.Compose([
                 translate=(0.05, 0.3),
                 interpolation=InterpolationMode.BICUBIC,
             ),
-            T.RandomRotation(degrees=(1, 359), interpolation=InterpolationMode.BICUBIC),
-            # T.RandomRotation(degrees=180, interpolation=InterpolationMode.BICUBIC),
-            # T.RandomRotation(degrees=270, interpolation=InterpolationMode.BICUBIC),
+            T.RandomRotation(degrees=(90, 270), interpolation=InterpolationMode.BICUBIC),
         ],
     ),
-    # convert to tensor for random erasing
-    T.Lambda(lambda x: np.array(x)),
-    T.Lambda(lambda x: AlbumentationsTransforms()(x)),  # Add Albumentations transforms
-    T.Lambda(lambda x: Image.fromarray(x)),
-    # T.ToTensor(),
-    # T.RandomErasing(p=0.05, scale=(0.02, 0.22), ratio=(0.3, 3.3)),
-    # T.RandomErasing(p=0.05, scale=(0.02, 0.22), ratio=(0.3, 3.3)),
-    # T.RandomErasing(p=0.05, scale=(0.02, 0.22), ratio=(0.3, 3.3)),
-    # T.ToPILImage(mode='YCbCr'),
+    # albumentations transforms
+    T.Lambda(lambda x: AlbumentationsTransforms()(x)),
     # strong transforms
-    # OneOf(
-    #     p=0.1,
-    #     transforms=[
-    #         T.GaussianBlur(kernel_size=3, sigma=(0.1, 2.0)),
-    #         T.RandomAdjustSharpness(sharpness_factor=0.5, p=1),
-    #         T.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1),
-    #     ],
-    # ),
+    OneOf(
+        p=0.1,
+        transforms=[
+            T.GaussianBlur(kernel_size=3, sigma=(0.1, 2.0)),
+            T.RandomAdjustSharpness(sharpness_factor=0.5, p=1),
+            T.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1),
+        ],
+    ),
     # generate ground truth
     T.Lambda(lambda x: apply_preprocess(x=x, scale=SCALE)),  # Add wavelet transform
 ])
 
 val_transform = T.Compose([
-    # T.RandomCrop(size=(WIDTH, WIDTH)),
     T.Lambda(lambda x: apply_preprocess(x=x, scale=SCALE)),  # Add wavelet transform
 ])
 
@@ -249,7 +241,6 @@ def main():
                 "ssim": ssim_value.item(),
                 "lr": optimizer.param_groups[0]['lr'],
             }
-            pbar.set_postfix(**log)
             if index >= (pbar.total - 1):
                 val_psnr, val_ssim, image = validate_model(
                     model=model,
@@ -260,6 +251,7 @@ def main():
                 if image:
                     log["output_image"] = wandb.Image(image)
             wandb.log(log)
+            pbar.set_postfix(**log)
 
         lr_scheduler.step()  # Adjust the learning rate
         torch.save(model.state_dict(), f'checkpoint/model_{(epoch + 1)}.pth')
