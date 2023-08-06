@@ -9,15 +9,11 @@ from torch.utils.data import DataLoader
 
 
 def psnr_loss(y_true, y_pred, max_pixel=1.0):
-    # assert y_true.shape == y_pred.shape, 'Cannot compute PSNR if two input shapes are not same: %s and %s' % (str(
-    #     y_true.shape), str(y_pred.shape))
     mse = torch.mean((y_pred - y_true) ** 2)
     return 10.0 * torch.log10((max_pixel ** 2) / mse)
 
 
 def ssim_loss(y_true, y_pred):
-    # assert y_true.shape == y_pred.shape, 'Cannot compute SSIM if two input shapes are not same: %s and %s' % (str(
-    #     y_true.shape), str(y_pred.shape))
     u_true = torch.mean(y_true)
     u_pred = torch.mean(y_pred)
     var_true = torch.var(y_true)

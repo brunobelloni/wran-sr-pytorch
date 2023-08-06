@@ -1,5 +1,6 @@
 import random
 
+import albumentations as A
 import numpy as np
 import torch
 import torch.nn as nn
@@ -7,7 +8,8 @@ import wandb
 from PIL import Image
 from datasets import load_dataset
 from torch.utils.data import DataLoader
-from torchvision.transforms import transforms as T, InterpolationMode
+from torchvision.transforms import InterpolationMode
+from torchvision.transforms import transforms as T
 from tqdm import tqdm
 
 from models.wran import WaveletBasedResidualAttentionNet
@@ -31,6 +33,19 @@ BATCH_SIZE = 64
 wt = WaveletsTransform().to(device)
 iwt = InverseWaveletsTransform().to(device)
 
+class AlbumentationsTransforms:
+    def __init__(self):
+        self.transform = A.Compose(
+            transforms=[
+                A.GridDropout(fill_value=0, p=1),
+            ],
+        )
+
+    def __call__(self, img):
+        augmented = self.transform(image=img)
+        return augmented['image']
+
+
 # Define your custom transform
 train_transform = T.Compose([
     # crop/resize
@@ -52,24 +67,36 @@ train_transform = T.Compose([
     OneOf(
         p=0.25,
         transforms=[
-            T.RandomRotation(degrees=90, interpolation=InterpolationMode.BICUBIC),
-            T.RandomRotation(degrees=180, interpolation=InterpolationMode.BICUBIC),
-            T.RandomRotation(degrees=270, interpolation=InterpolationMode.BICUBIC),
+            T.RandomAffine(
+                degrees=(1, 15),
+                shear=(0.05, 0.3),
+                scale=(0.9, 1.1),
+                translate=(0.05, 0.3),
+                interpolation=InterpolationMode.BICUBIC,
+            ),
+            T.RandomRotation(degrees=(1, 359), interpolation=InterpolationMode.BICUBIC),
+            # T.RandomRotation(degrees=180, interpolation=InterpolationMode.BICUBIC),
+            # T.RandomRotation(degrees=270, interpolation=InterpolationMode.BICUBIC),
         ],
     ),
     # convert to tensor for random erasing
-    T.ToTensor(),
-    T.RandomErasing(p=0.05, scale=(0.02, 0.22), ratio=(0.3, 3.3)),
-    T.ToPILImage(mode='YCbCr'),
+    T.Lambda(lambda x: np.array(x)),
+    T.Lambda(lambda x: AlbumentationsTransforms()(x)),  # Add Albumentations transforms
+    T.Lambda(lambda x: Image.fromarray(x)),
+    # T.ToTensor(),
+    # T.RandomErasing(p=0.05, scale=(0.02, 0.22), ratio=(0.3, 3.3)),
+    # T.RandomErasing(p=0.05, scale=(0.02, 0.22), ratio=(0.3, 3.3)),
+    # T.RandomErasing(p=0.05, scale=(0.02, 0.22), ratio=(0.3, 3.3)),
+    # T.ToPILImage(mode='YCbCr'),
     # strong transforms
-    OneOf(
-        p=0.05,
-        transforms=[
-            T.RandomPerspective(p=1, distortion_scale=0.1, interpolation=InterpolationMode.BICUBIC),
-            T.RandomApply(p=1, transforms=[T.ElasticTransform(interpolation=InterpolationMode.BICUBIC)]),
-            T.RandomApply(p=1, transforms=[T.ColorJitter(brightness=0.01, contrast=0.1, saturation=0.1, hue=0.1)]),
-        ],
-    ),
+    # OneOf(
+    #     p=0.1,
+    #     transforms=[
+    #         T.GaussianBlur(kernel_size=3, sigma=(0.1, 2.0)),
+    #         T.RandomAdjustSharpness(sharpness_factor=0.5, p=1),
+    #         T.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1),
+    #     ],
+    # ),
     # generate ground truth
     T.Lambda(lambda x: apply_preprocess(x=x, scale=SCALE)),  # Add wavelet transform
 ])
@@ -107,10 +134,11 @@ class Dataset(torch.utils.data.Dataset):
         self.multiplier = multiplier
 
     def __getitem__(self, idx):
-        input_data = Image.open(fp=self.dataset[idx % len(self.dataset)]['hr']).convert("YCbCr")
+        idx = idx % len(self.dataset)
+        input_data = Image.open(fp=self.dataset[idx]['hr']).convert("YCbCr")
 
         if self._type != 'train':
-            input_data = input_data.crop(self.dataset[idx % len(self.dataset)]['crop'])
+            input_data = input_data.crop(self.dataset[idx]['crop'])
 
         if self.transform:
             input_data = self.transform(input_data)
@@ -159,7 +187,7 @@ def validate_model(model, dataloader, epoch=None, save_image=False):
 def main():
     dataset = load_dataset("eugenesiow/Div2k")  # Load the dataset
 
-    train_dataset = Dataset(dataset=dataset['train'], transform=train_transform, multiplier=40, _type='train')
+    train_dataset = Dataset(dataset=dataset['train'], transform=train_transform, multiplier=1, _type='train')
     val_dataset = Dataset(dataset=custom_val_dataset, _type='val', transform=val_transform)
     # val_dataset = Dataset(dataset=dataset['validation'], transform=val_transform)
 
@@ -171,7 +199,7 @@ def main():
     model.initialize_weights()
     # model.load_state_dict(torch.load("final_model.pth"))
 
-    wandb.init(project="wransr", entity="brunobelloni")
+    wandb.init(project="wransr", entity="brunobelloni", save_code=True)
     wandb.watch(model)
 
     initial_lr, min_lr, lr_decay_factor, lr_decay_epoch = 0.001, 0.0000001, 0.1, 40
@@ -205,8 +233,7 @@ def main():
 
             # forward + backward + optimize
             outputs = model(wt(image_bic))  # Forward pass
-            # loss = criterion(outputs, wt(image_hr - image_bic))  # Compute loss
-            loss = criterion(iwt(outputs), image_hr - image_bic)  # Compute loss
+            loss = criterion(outputs, wt(image_hr - image_bic))  # Compute loss
             loss.backward()  # Backward pass
             optimizer.step()  # Update weights
 
