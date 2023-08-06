@@ -38,7 +38,15 @@ class AlbumentationsTransforms:
     def __init__(self):
         self.transform = A.Compose(
             transforms=[
-                A.GridDropout(fill_value=0, p=0.25),
+                A.OneOf(
+                    p=0.15,
+                    transforms=[
+                        A.CLAHE(p=1),
+                        A.Sharpen(p=1),
+                    ],
+                ),
+                A.GridDropout(p=0.15, fill_value=0),
+                A.ColorJitter(p=0.15, brightness=(.05, .3), contrast=(.05, .3), saturation=(.05, .3), hue=(.05, .3)),
             ],
         )
 
@@ -81,15 +89,6 @@ train_transform = T.Compose([
     ),
     # albumentations transforms
     T.Lambda(lambda x: AlbumentationsTransforms()(x)),
-    # strong transforms
-    OneOf(
-        p=0.1,
-        transforms=[
-            T.GaussianBlur(kernel_size=3, sigma=(0.1, 2.0)),
-            T.RandomAdjustSharpness(sharpness_factor=0.5, p=1),
-            T.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1),
-        ],
-    ),
     # generate ground truth
     T.Lambda(lambda x: apply_preprocess(x=x, scale=SCALE)),  # Add wavelet transform
 ])
@@ -158,11 +157,15 @@ def validate_model(model, dataloader, epoch=None, save_image=False):
             total_psnr += batch_psnr.item()
             total_ssim += batch_ssim.item()
 
-    image_pil = None
+    image_pil, caption = None, None
     if save_image and epoch:
         # image_array = np.array(iwt(outputs)[0].detach().cpu() * 255).astype(np.uint8)
         image_array = np.array((iwt(outputs)[0].detach().cpu() + image_bic[0].detach().cpu()) * 255).astype(np.uint8)
         image_pil = Image.fromarray(image_array, mode='L')
+
+        batch_psnr = psnr_loss(iwt(outputs)[0], image_hr[0])
+        batch_ssim = ssim_loss(iwt(outputs)[0], image_hr[0])
+        caption = f"{batch_psnr.item():.4f}/{batch_ssim.item():.4f}"
         # image_pil.save(f'results/sr_{epoch}.jpg')
         #
         # image_hr_array = np.array(image_hr[0].detach().cpu() * 255).astype(np.uint8)
@@ -173,7 +176,7 @@ def validate_model(model, dataloader, epoch=None, save_image=False):
         # image_bic_pil = Image.fromarray(image_bic_array, mode='L')
         # image_bic_pil.save(f'results/bic.jpg')
 
-    return total_psnr / num_batches, total_ssim / num_batches, image_pil
+    return total_psnr / num_batches, total_ssim / num_batches, image_pil, caption
 
 
 def main():
@@ -241,17 +244,17 @@ def main():
                 "ssim": ssim_value.item(),
                 "lr": optimizer.param_groups[0]['lr'],
             }
+            pbar.set_postfix(**log)
             if index >= (pbar.total - 1):
-                val_psnr, val_ssim, image = validate_model(
+                val_psnr, val_ssim, image, caption = validate_model(
                     model=model,
-                    epoch=epoch,
+                    epoch=epoch + 1,
                     save_image=True,
                     dataloader=val_dataloader,
                 )
                 if image:
-                    log["output_image"] = wandb.Image(image)
+                    log["output_image"] = wandb.Image(data_or_path=image, caption=caption)
             wandb.log(log)
-            pbar.set_postfix(**log)
 
         lr_scheduler.step()  # Adjust the learning rate
         torch.save(model.state_dict(), f'checkpoint/model_{(epoch + 1)}.pth')
