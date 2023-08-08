@@ -1,5 +1,7 @@
+import torch
 import torch.nn as nn
 import torch.nn.init as init
+
 from models.cbam import CBAM
 from models.inception import InceptionModule
 
@@ -18,7 +20,7 @@ class WaveletBasedResidualAttentionNet(nn.Module):
         self.attention_module = CBAM(gate_channels=width, reduction_ratio=ratio)
 
         self.final_layers = nn.Sequential(
-            nn.Conv2d(in_channels=width, out_channels=width, kernel_size=3, padding=1),
+            nn.Conv2d(in_channels=width * depth, out_channels=width, kernel_size=3, padding=1),
             nn.LeakyReLU(negative_slope=alpha),
             nn.Conv2d(in_channels=width, out_channels=4, kernel_size=3, padding=1),
         )
@@ -26,19 +28,21 @@ class WaveletBasedResidualAttentionNet(nn.Module):
     def forward(self, x):
         out = self.feature_extraction(x)
 
+        residuals = []
         for _ in range(self.depth):
             residual = out
             out = self.inception_module(out)
             out = self.attention_module(out)
             out += residual
+            residuals.append(residual)
 
-        out = self.final_layers(out)
+        out = self.final_layers(torch.cat(tensors=residuals, dim=1))
         return out
 
     def initialize_weights(self):
         for m in self.modules():
             if isinstance(m, (nn.Conv2d, nn.Linear)):
-                # Xavier initialization for convolutional layers
+                # Xavier's initialization for convolutional layers
                 init.xavier_uniform_(tensor=m.weight, gain=0.1)
                 if m.bias is not None:
                     init.constant_(m.bias, 0)

@@ -39,14 +39,18 @@ class AlbumentationsTransforms:
         self.transform = A.Compose(
             transforms=[
                 A.OneOf(
-                    p=0.15,
+                    p=0.20,
                     transforms=[
                         A.CLAHE(p=1),
                         A.Sharpen(p=1),
+                        A.Emboss(p=1),
+                        A.Solarize(p=1),
+                        A.Posterize(p=1),
+                        A.GaussNoise(p=1),
                     ],
                 ),
-                A.GridDropout(p=0.15, fill_value=0),
-                A.ColorJitter(p=0.15, brightness=(.05, .3), contrast=(.05, .3), saturation=(.05, .3), hue=(.05, .3)),
+                A.GridDropout(p=0.20, fill_value=0, random_offset=True),
+                A.ColorJitter(p=0.20, brightness=(.05, .3), contrast=(.05, .3), saturation=(.05, .3), hue=(.05, .3)),
             ],
         )
 
@@ -59,23 +63,12 @@ class AlbumentationsTransforms:
 # Define your custom transform
 train_transform = T.Compose([
     # crop/resize
-    OneOf(
-        p=1,
-        transforms=[
-            T.RandomCrop(size=(WIDTH, WIDTH), padding_mode='edge'),
-            T.RandomResizedCrop(
-                size=(WIDTH, WIDTH),
-                scale=(0.05, 0.3),
-                ratio=(0.8, 1.2),
-                interpolation=InterpolationMode.BICUBIC,
-            ),
-        ],
-    ),
+    T.RandomCrop(size=(WIDTH, WIDTH), padding_mode='edge'),
     # basic transforms
-    T.RandomVerticalFlip(p=0.25),
-    T.RandomHorizontalFlip(p=0.25),
+    T.RandomVerticalFlip(p=0.30),
+    T.RandomHorizontalFlip(p=0.30),
     OneOf(
-        p=0.25,
+        p=0.30,
         transforms=[
             T.RandomAffine(
                 degrees=(1, 15),
@@ -197,27 +190,20 @@ def main():
     wandb.init(project="wransr", entity="brunobelloni", save_code=True)
     wandb.watch(model)
 
-    initial_lr, min_lr, lr_decay_factor, lr_decay_epoch = 0.001, 0.0000001, 0.1, 40
+    num_epochs = 200
+    val_psnr, val_ssim = 0, 0  # Validation metrics
     criterion = nn.L1Loss()
     optimizer = torch.optim.Adam(
-        lr=initial_lr,
+        lr=0.001,
         eps=1e-08,
         weight_decay=0,
         betas=(0.9, 0.999),
         params=model.parameters(),
     )
 
-    lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
-        optimizer=optimizer,
-        lr_lambda=lambda epoch: lr_decay_factor ** (epoch // lr_decay_epoch)
-        if initial_lr * lr_decay_factor ** (epoch // lr_decay_epoch) > min_lr
-        else min_lr
-    )
+    # Define the learning rate scheduler
+    lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer=optimizer, step_size=40, gamma=0.1)
 
-    # Validation metrics
-    val_psnr, val_ssim = 0, 0
-    # Training loop
-    num_epochs = 200
     for epoch in range(num_epochs):
         model.train()
         for index, (image_hr, _, image_bic) in enumerate((pbar := tqdm(dataloader))):
