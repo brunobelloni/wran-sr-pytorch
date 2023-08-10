@@ -8,12 +8,13 @@ import wandb
 from PIL import Image
 from datasets import load_dataset
 from torch.utils.data import DataLoader
+from torchmetrics.image import PeakSignalNoiseRatio, StructuralSimilarityIndexMeasure
 from torchvision.transforms import InterpolationMode
 from torchvision.transforms import transforms as T
 from tqdm import tqdm
 
 from models.wran import WaveletBasedResidualAttentionNet
-from utils import apply_preprocess, WaveletsTransform, InverseWaveletsTransform, psnr_loss, ssim_loss, OneOf
+from utils import apply_preprocess, WaveletsTransform, InverseWaveletsTransform, OneOf, ssim_loss, psnr_loss
 
 # Set random seed for reproducibility
 random.seed(42)
@@ -22,6 +23,8 @@ torch.manual_seed(42)
 # device = torch.device('cpu')
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
+psnr = psnr_loss
+ssim = ssim_loss
 # psnr = PeakSignalNoiseRatio().to(device)
 # ssim = StructuralSimilarityIndexMeasure().to(device)
 
@@ -38,19 +41,8 @@ class AlbumentationsTransforms:
     def __init__(self):
         self.transform = A.Compose(
             transforms=[
-                A.OneOf(
-                    p=0.20,
-                    transforms=[
-                        A.CLAHE(p=1),
-                        A.Sharpen(p=1),
-                        A.Emboss(p=1),
-                        A.Solarize(p=1),
-                        A.Posterize(p=1),
-                        A.GaussNoise(p=1),
-                    ],
-                ),
-                A.GridDropout(p=0.20, fill_value=0, random_offset=True),
-                A.ColorJitter(p=0.20, brightness=(.05, .3), contrast=(.05, .3), saturation=(.05, .3), hue=(.05, .3)),
+                A.GridDropout(p=0.05, fill_value=0, random_offset=True, unit_size_min=6, unit_size_max=12),
+                A.ColorJitter(p=0.10, brightness=(.05, .3), contrast=(.05, .3), saturation=(.05, .3), hue=(.05, .3)),
             ],
         )
 
@@ -71,17 +63,18 @@ train_transform = T.Compose([
         p=0.30,
         transforms=[
             T.RandomAffine(
-                degrees=(1, 15),
-                shear=(0.05, 0.3),
-                scale=(0.9, 1.1),
-                translate=(0.05, 0.3),
+                degrees=(-15, 15),
+                shear=(-0.3, 0.3),
+                scale=(0.8, 1.2),
+                translate=(0.1, 0.3),
                 interpolation=InterpolationMode.BICUBIC,
             ),
             T.RandomRotation(degrees=(90, 270), interpolation=InterpolationMode.BICUBIC),
+            T.RandomPerspective(p=1.0, distortion_scale=0.3, interpolation=InterpolationMode.BICUBIC),
         ],
     ),
     # albumentations transforms
-    T.Lambda(lambda x: AlbumentationsTransforms()(x)),
+    # T.Lambda(lambda x: AlbumentationsTransforms()(x)),
     # generate ground truth
     T.Lambda(lambda x: apply_preprocess(x=x, scale=SCALE)),  # Add wavelet transform
 ])
@@ -143,8 +136,8 @@ def validate_model(model, dataloader, epoch=None, save_image=False):
             image_hr = image_hr.to(device)
             outputs = model(wt(image_bic))
 
-            batch_psnr = psnr_loss(iwt(outputs), image_hr)
-            batch_ssim = ssim_loss(iwt(outputs), image_hr)
+            batch_psnr = psnr(iwt(outputs), image_hr)
+            batch_ssim = ssim(iwt(outputs), image_hr)
 
             num_batches += 1
             total_psnr += batch_psnr.item()
@@ -156,10 +149,10 @@ def validate_model(model, dataloader, epoch=None, save_image=False):
         image_array = np.array((iwt(outputs)[0].detach().cpu() + image_bic[0].detach().cpu()) * 255).astype(np.uint8)
         image_pil = Image.fromarray(image_array, mode='L')
 
-        batch_psnr = psnr_loss(iwt(outputs)[0], image_hr[0])
-        batch_ssim = ssim_loss(iwt(outputs)[0], image_hr[0])
+        batch_psnr = psnr(iwt(outputs)[0], image_hr[0])
+        batch_ssim = ssim(iwt(outputs)[0], image_hr[0])
         caption = f"{batch_psnr.item():.4f}/{batch_ssim.item():.4f}"
-        # image_pil.save(f'results/sr_{epoch}.jpg')
+        image_pil.save(f'results/sr_{epoch}.jpg')
         #
         # image_hr_array = np.array(image_hr[0].detach().cpu() * 255).astype(np.uint8)
         # image_hr_pil = Image.fromarray(image_hr_array, mode='L')
@@ -181,14 +174,14 @@ def main():
 
     # PyTorch dataloaders
     dataloader = DataLoader(dataset=train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=16, pin_memory=True)
-    val_dataloader = DataLoader(dataset=val_dataset, batch_size=10, shuffle=False, num_workers=2, pin_memory=True)
+    val_dataloader = DataLoader(dataset=val_dataset, batch_size=11, shuffle=False, num_workers=2, pin_memory=True)
 
     model = WaveletBasedResidualAttentionNet(width=WIDTH).to(device)
     model.initialize_weights()
     # model.load_state_dict(torch.load("final_model.pth"))
 
-    wandb.init(project="wransr", entity="brunobelloni", save_code=True)
-    wandb.watch(model)
+    # wandb.init(project="wransr", entity="brunobelloni", save_code=True)
+    # wandb.watch(model)
 
     num_epochs = 200
     val_psnr, val_ssim = 0, 0  # Validation metrics
@@ -218,8 +211,8 @@ def main():
             loss.backward()  # Backward pass
             optimizer.step()  # Update weights
 
-            psnr_value = psnr_loss(iwt(outputs), image_hr)
-            ssim_value = ssim_loss(iwt(outputs), image_hr)
+            psnr_value = psnr(iwt(outputs), image_hr)
+            ssim_value = ssim(iwt(outputs), image_hr)
 
             log = {
                 "epoch": epoch + 1,
@@ -240,10 +233,10 @@ def main():
                 )
                 if image:
                     log["output_image"] = wandb.Image(data_or_path=image, caption=caption)
-            wandb.log(log)
+            # wandb.log(log)
 
         lr_scheduler.step()  # Adjust the learning rate
-        torch.save(model.state_dict(), f'checkpoint/model_{(epoch + 1)}.pth')
+        # torch.save(model.state_dict(), f'checkpoint/model_{(epoch + 1)}.pth')
 
     torch.save(model.state_dict(), 'checkpoint/final_model.pth')
 

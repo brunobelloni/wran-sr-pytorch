@@ -3,15 +3,15 @@ import random
 import numpy as np
 import torch
 from PIL import Image
+from torchmetrics.image import PeakSignalNoiseRatio, StructuralSimilarityIndexMeasure
 
 from train import (WaveletBasedResidualAttentionNet, WIDTH, wt, iwt)
-from utils import apply_preprocess, psnr_loss, ssim_loss
+from utils import apply_preprocess
 
-model_path = "/home/bruno/Downloads/checkpoints_2/model_110.pth"
+model_path = "/home/bruno/Downloads/checkpoint_55/final_model.pth"
 
-
-def retore_image():
-    pass
+psnr = PeakSignalNoiseRatio(data_range=1.0)
+ssim = StructuralSimilarityIndexMeasure(data_range=1.0)
 
 
 def predict(model, epoch=None, device=torch.device('cpu')):
@@ -19,7 +19,9 @@ def predict(model, epoch=None, device=torch.device('cpu')):
     torch.manual_seed(42)
 
     image = Image.open("test_images/tiger.png").convert('YCbCr')
+    image.save("results/full.jpg")
     image = image.crop((740, 600, 740 + WIDTH, 600 + WIDTH))
+    # image = image.crop((0, 0, 0 + WIDTH, 0 + WIDTH))
 
     image_hr, _, image_bic = apply_preprocess(x=image)
 
@@ -27,18 +29,25 @@ def predict(model, epoch=None, device=torch.device('cpu')):
     # target_data = wt(image_hr.unsqueeze(0).to(device))
     # target_data = wt((image_hr.unsqueeze(0) - image_bic.unsqueeze(0)).to(device))
 
-    image_hr_pil = Image.fromarray(np.array(image_hr * 255).astype(np.uint8), mode='L')
+    restored_hr = np.array(image)
+    # temp_[:, :, 0] = np.array(image_hr * 255).astype(np.uint8())
+    image_hr_pil = Image.fromarray(restored_hr, mode='YCbCr')
     image_hr_pil.save("results/original.jpg")
 
-    image_bic_pil = Image.fromarray(np.array(image_bic * 255.0).astype(np.uint8), 'L')
+    restored_bic = np.array(image)
+    restored_bic[:, :, 0] = np.array(image_bic * 255).astype(np.uint8())
+    image_bic_pil = Image.fromarray(restored_bic, mode='YCbCr')
     image_bic_pil.save("results/bicubic.jpg")
 
     result = model(input_data)
 
     image_sr = iwt(result)
 
-    image_sr = np.array(((image_sr.squeeze(0) + image_bic.to(device)) * 255).detach().cpu()).astype(np.uint8())
-    image_sr_pil = Image.fromarray(image_sr, 'L')
+    restored_sr = np.array(image)
+    restored_sr[:, :, 0] = np.array(((image_sr.squeeze(0) + image_bic.to(device)) * 255).detach().cpu()).astype(
+        np.uint8())
+    # image_sr = np.array(((image_sr.squeeze(0) + image_bic.to(device)) * 255).detach().cpu()).astype(np.uint8())
+    image_sr_pil = Image.fromarray(restored_sr, mode='YCbCr')
     image_sr_pil.save("results/sr.jpg")
     if epoch is None:
         image_sr_pil.save("results/sr.jpg")
@@ -52,8 +61,10 @@ def predict(model, epoch=None, device=torch.device('cpu')):
     # else:
     #     image_sr_bic_pil.save(f"results/sr_bic_{epoch}.jpg")
 
-    print(f'PSNR: {psnr_loss(iwt(result).squeeze(0), image_hr.to(device)).item():.6f}')
-    print(f'SSIM: {ssim_loss(iwt(result).squeeze(0), image_hr.to(device)).item():.6f}')
+    restored_hr = torch.tensor(restored_hr / 255).unsqueeze(0).permute(0, 3, 1, 2)
+    restored_sr = torch.tensor(restored_sr / 255).unsqueeze(0).permute(0, 3, 1, 2)
+    print(f'PSNR: {psnr(restored_sr, restored_hr).item():.6f}')
+    print(f'SSIM: {ssim(restored_sr, restored_hr).item():.6f}')
 
     # # add Cb and Cr channels
     # # final_image = image_sr.squeeze(0).cpu().detach().numpy() * 255.0

@@ -17,10 +17,6 @@ def save_batch_as_image(hr_batch, bic_batch, wt_hr_batch, wt_bic_batch, save_pat
     hr_images = hr_images.numpy().astype(np.uint8)  # Convert to numpy
     bic_images = bic_images.numpy().astype(np.uint8)  # Convert to numpy
 
-    # Assume images are grayscale, convert to 3-channel for cv2
-    # hr_images = np.stack([hr_images] * 3, axis=-1)
-    # bic_images = np.stack([bic_images] * 3, axis=-1)
-
     concat_images = []
 
     for idx in range(hr_images.shape[0]):
@@ -43,6 +39,7 @@ def save_batch_as_image(hr_batch, bic_batch, wt_hr_batch, wt_bic_batch, save_pat
         # Concatenate 64x64 images horizontally (side by side)
         h_img = np.concatenate((hr_images[idx], wt_img_hr, bic_images[idx], wt_img_bic), axis=1)
         concat_images.append(h_img)
+        break
 
     # Concatenate all the images vertically
     v_img = np.concatenate(concat_images, axis=0)
@@ -59,8 +56,8 @@ def main():
     # PyTorch dataloaders
     dataloader = DataLoader(
         dataset=train_dataset,
-        batch_size=64,
-        shuffle=True,
+        batch_size=1,
+        shuffle=False,
         num_workers=16,
         pin_memory=True,
     )
@@ -73,8 +70,17 @@ def main():
             wt_bic_batch=wt(batch[2]),
             save_path=f'batch_{batch_idx}.png',
         )
-        print(batch_idx)
-        # break  # save only the first batch
+        break  # save only the first batch
+
+    for batch_idx, batch in enumerate(dataloader):
+        save_batch_as_image(
+            hr_batch=batch[0],
+            bic_batch=batch[2],
+            wt_hr_batch=wt(batch[0]),
+            wt_bic_batch=wt(batch[2]),
+            save_path=f'2batch_{batch_idx}.png',
+        )
+        break  # save only the first batch
 
 
 if __name__ == '__main__':
